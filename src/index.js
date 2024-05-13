@@ -17,35 +17,46 @@
  * limitations under the License.
  */
 
-import { ResourceFactory } from 'ilib-tools-common';
+import * as yamllib from 'yaml';
+import { ResourceString, TranslationSet } from 'ilib-tools-common';
 
 /**
  * @class Represents a yaml source file.
  *
  */
-class YamlFile {
+class Yaml {
     /**
-     * Constructor a new YamlFile instance.
-     * 
+     * Constructor a new Yaml instance.
+     *
      * If the instance is constructed with a sourceYaml parameter, then the resources
-     * for this intance will be considered as translated strings. Every string read
+     * for this intance will be considered to be translated strings. Every string read
      * from the current yaml file will be looked up in the sourceYaml instance by id
      * for the corresponding source string and strings in this instance will be the
      * translated string. If no sourceYaml parameter is provided, then this instance
      * will be considered as a source yaml, and all strings read will appear as the
      * source of the Resource instances.<p>
-     * 
+     *
      * If the yaml contains comments, these will appear as comments on the Resource
      * instances as well.
-     * 
+     *
      * @constructor
      * @param {Object} props properties that control the construction of this file.
      * @param {YamlFile} props.sourceYaml If the current file contains translations,
      * the corresponding source string can be found in this yaml instance
      * @param {string} props.pathName The path to the file
      * @param {string} props.project The name of the project to apply to all Resource instances
-     * @param {string} props.locale the target locale of this file to apply
+     * @param {string} props.locale for source-only yaml files, this is the source locale.
+     * For source and target yaml files, this is the target locale to apply
      * to all Resource instances
+     * @param {string} props.context The context to apply to every Resource instance
+     * @param {string} props.state The state to apply to every Resource instance
+     * @param {string} props.datatype The datatype to apply to every Resource instance
+     * @param {string} props.flavor The flavor to apply to every Resource instance
+     * @param {Function(string, string)} props.filter Provide a filter that tells whether
+     * or not the current key/value pair should be included as a Resource. This filter
+     * is called on each yaml entry before the Resource is created. If the filter returns
+     * false, the entry is skipped and no Resource is created. If it returns true, or if
+     * there was no filter specified, then the Resource is created normally.
      */
     constructor(props) {
         if (props) {
@@ -53,168 +64,107 @@ class YamlFile {
             this.pathName = props.pathName;
             this.project = props.project;
             this.locale = props.locale;
+            this.context = props.context;
+            this.state = props.state;
+            this.datatype = props.datatype;
+            this.flavor = props.flavor;
+            this.filter = typeof(props.filter) === "function" ? props.filter : undefined;
         }
 
         this.commentsMap = new Map();
-    }
-    
-    read(pathName) {}
-    
-    write(pathName) {}
-    
-    getResource(id) {}
-    
-    getResources() {}
-    
-    addResource(resource) {}
-    
-    addResources(resourceArray) {}
-}
-
-export default YamlFile;
-
-//characters that are bad in the start of the word
-var badStartPunct = {
-    '~': true,
-    '!': true,
-    '@': true,
-    '#': true,
-    '$': true,
-    '^': true,
-    '*': true,
-    '_': true,
-    '=': true,
-    '+': true,
-    '|': true,
-    ':': true,
-    ';': true,
-    '.': true,
-    '?': true,
-    '/': true,
-    '<': true,
-    '>': true,
-    ',': true
-};
-
-//characters that are bad in the middle of the word
-var badMiddlePunct = {
-    '~': true,
-    '!': true,
-    '@': true,
-    '#': true,
-    '$': true,
-    '%': true,
-    '^': true,
-    '*': true,
-    '_': true,
-    '=': true,
-    '+': true,
-    '|': true,
-    ':': true,
-    ';': true,
-    '.': true,
-    '?': true,
-    '/': true,
-    '<': true,
-    '>': true,
-    ',': true,
-    '"': true
-};
-
-// characters that are bad at the end of the word
-var badEndPunct = {
-    '~': true,
-    '@': true,
-    '#': true,
-    '$': true,
-    '^': true,
-    '*': true,
-    '_': true,
-    '=': true,
-    '+': true,
-    '|': true,
-    '/': true,
-    '<': true,
-    '>': true,
-    ',': true
-};
-
-/**
- * @private
- */
-YamlFile.prototype._isTranslatable = function(resource) {
-    var locale = new Locale(this.getLocale());
-
-    var yamlSettings = this.project.settings && this.project.settings.yaml;
-
-    // if checkTranslatability setting exists in the yaml property and it's set to false then check will be turned off
-    if (yamlSettings && (yamlSettings.checkTranslatability === false)) return true;
-
-    if (!resource || typeof(resource) !== "string") {
-        return false;
-    }
-    if (locale.language === "zh" ||
-            locale.language === "ja" ||
-            locale.language === "ko" ||
-            locale.language === "th" ||
-            resource.indexOf(' ') > -1) {
-        return true;
+        this.set = new TranslationSet();
     }
 
-    // only one word?
-
-    // 99.3% of English words are longer than 3 characters
-    // 99.8% of English words are shorter than 20 letters so anything
-    // outside that range is most probably not an English word
-    if (resource.length < 4 || resource.length > 20) {
-        return false;
+    /**
+     * Constructs full element key by escaping the dots.
+     *
+     * @param {string} prefix the prefix of this key
+     * @param {string} key the key to normalize
+     * @returns {string} the normalized key
+     *
+     * @private
+     */
+    normalizeKey(prefix, key) {
+        return (prefix ? prefix + "." : "") + key.toString().replace(/\./g, '\\.');
     }
 
-    // any bad punctuation? Not a single English word
-    if (badStartPunct[resource[0]] || badEndPunct[resource[resource.length-1]]) {
-        return false;
-    }
-
-    for (var i = 1; i < resource.length-1; i++) {
-        if (badMiddlePunct[resource[i]]) {
-            return false;
+    /**
+     * Extract comments from Node and store it in a map.
+     * element_id => extracted_comment
+     *
+     * @param {String} key id of the node
+     * @param {Object} node node to parse and extract comment from
+     * @param {String} firstComment comment from the level above,
+     * due to the fact that by default first comment in a YAMLMap is assigned
+     * to the YAMLMap's value itself, but not the first element in the map
+     *
+     * @private
+     */
+    parseNodeComment(key, node, firstComment) {
+        if (yamllib.isPair(node)) {
+            if (firstComment || node.key.commentBefore) {
+                this.commentsMap.set(this.normalizeKey(key, node.key.value), firstComment || node.key.commentBefore);
+            }
+            this.parseNodeComment(this.normalizeKey(key, node.key.value), node.value, node.value.commentBefore);
+        } else if (yamllib.isSeq(node)) {
+            node.items.forEach((mapNode, i) => {
+                this.parseNodeComment(this.normalizeKey(key, i), mapNode, i === 0 ? firstComment : undefined);
+            });
+        } else if (yamllib.isMap(node)) {
+            node.items.forEach((mapNode, i) => {
+                this.parseNodeComment(key, mapNode, i === 0 ? firstComment : undefined);
+            });
+        } else if (yamllib.isScalar(node)) {
+            if (firstComment || node.commentBefore) {
+                this.commentsMap.set(key, firstComment || node.commentBefore);
+            }
         }
     }
 
-    // all non-letters or embedded digits? Not English
-    if (!resource.match(/[a-zA-Z]/) || resource.match(/[0-9]/)) {
-        return false;
+    /**
+     * Parse a yml file as Document and traverse nodes tree
+     * and extract comments.
+     *
+     * @private
+     */
+    parseComments = function() {
+        if (!this.json) return; // can't parse undefined!
+debugger;
+        this.document.contents.items.forEach(node => {
+            this.parseNodeComment(node);
+        });
     }
 
-    // ALL CAPS? all lower? Initial cap? Okay
-    // CamelCase? Not English
-    return !resource.match(/[A-Z].*[a-z].*[A-Z]/);
-};
+    /**
+     * @private
+     */
+    parseResources(prefix, obj, set, localize) {
+        const locale = this.locale;
+        for (var key in obj) {
+            if (typeof(obj[key]) === "object") {
+                this.parseResources(this.normalizeKey(prefix, key), obj[key], set, localize);
+            } else if (localize) {
+                const resource = obj[key];
+                const reskey = this.normalizeKey(prefix, key);
 
-/**
- * @private
- */
-YamlFile.prototype._parseResources = function(prefix, obj, set, localize) {
-    var locale = this.getLocale();
-    for (var key in obj) {
-        if (typeof(obj[key]) === "object") {
-            var localizeChildren = localize && (this.getExcludedKeysFromSchema().indexOf(key) === -1);
-            this._parseResources(this._normalizeKey(prefix, key), obj[key], set, localizeChildren);
-        } else if (localize && this.getExcludedKeysFromSchema().indexOf(key) === -1) {
-            var resource = obj[key];
-            if (this._isTranslatable(resource)) {
-                this.logger.trace("Adding string resource " + JSON.stringify(resource) + " locale " + this.getLocale());
+                // we check if filter is a function in the constructor
+                if (this.filter && !this.filter(reskey, resource)) {
+                    // skip this entry, as the caller has filtered it out
+                    continue;
+                }
+
+                // this.logger.trace("Adding string resource " + JSON.stringify(resource) + " locale " + this.getLocale());
                 var params = {
                     resType: "string",
-                    project: this.project.getProjectId(),
-                    key: this._normalizeKey(prefix, key),
+                    project: this.project,
+                    key: reskey,
                     autoKey: true,
                     pathName: this.pathName,
-                    datatype: this.type.datatype,
+                    datatype: this.datatype,
                     localize: localize,
                     index: this.resourceIndex++
                 };
-                if (locale === this.project.sourceLocale || this.flavor) {
+                if (locale === this.sourceLocale || this.flavor) {
                     params.sourceLocale = locale;
                     params.source = resource;
                     params.flavor = this.flavor;
@@ -224,8 +174,8 @@ YamlFile.prototype._parseResources = function(prefix, obj, set, localize) {
                     params.targetLocale = locale;
                 }
 
-                if (this.commentsMap.has(this._normalizeKey(prefix, key))) {
-                    var comment = this.commentsMap.get(this._normalizeKey(prefix, key)).trim();
+                if (this.commentsMap.has(reskey)) {
+                    const comment = this.commentsMap.get(reskey).trim();
                     if (this.getCommentPrefix()) {
                         if (comment.startsWith(this.getCommentPrefix())) {
                             params.comment = comment.slice(this.getCommentPrefix().length).trim();
@@ -235,17 +185,68 @@ YamlFile.prototype._parseResources = function(prefix, obj, set, localize) {
                     }
                 }
 
-                var res = this.API.newResource(params);
+                const res = new ResourceString(params);
 
                 set.add(res);
             }
         }
     }
+
+    /**
+     * Return the path name that is used to construct all Resource instances.
+     * @returns {string} the path used to construct all Resource instances
+     */
+    getPath() {
+        return this.pathName;
+    }
+
+    /**
+     * Deserialize a string containing the contents of a yaml file into an array
+     * of Resource instances.
+     *
+     * @param {string} content The contents of the file to parse
+     */
+    deserialize(content) {
+        this.resourceIndex = 0;
+        this.document = yamllib.parseDocument(content);
+        this.json = yamllib.parse(content);
+        this.parseComments();
+        this.parseResources(undefined, this.json, this.set, true);
+    }
+
+    serialize() {}
+
+    getResource(id) {}
+
+    /**
+     * Return the set of resources in this yaml file.
+     *
+     * @returns
+     */
+    getResources() {
+        return this.set.getResources();
+    }
+
+    /**
+     * Return a translation set with all the resources from the current file in it.
+     *
+     * @returns {TranslationSet} the set with all the resources in it
+     */
+    getTranslationSet() {
+        return this.set;
+    }
+
+    addResource(resource) {}
+
+    addResources(resourceArray) {}
 }
+
+export default Yaml;
+
 
 /**
  * @private
- */
+ *
 YamlFile.prototype._mergeOutput = function(prefix, obj, set) {
     for (var key in obj) {
         if (typeof(obj[key]) === "object") {
@@ -280,7 +281,7 @@ YamlFile.prototype._mergeOutput = function(prefix, obj, set) {
  * file's translation set.
  *
  * @param {String} str the string to parse
- */
+ *
 YamlFile.prototype.parse = function(str) {
     this.resourceIndex = 0;
     this.json = yaml.parse(str);
@@ -289,21 +290,6 @@ YamlFile.prototype.parse = function(str) {
     this._parseResources(prefix, this.json, this.set, true);
 };
 
-/**
- * Parse a yml file as Document and traverse nodes tree
- * and extract comments.
- *
- * @param {String} str source yaml string to parse
- *
- * @private
- */
-YamlFile.prototype._parseComments = function(prefix, str) {
-    var document = yaml.parseDocument(str);
-
-    document.contents.items.forEach(node => {
-        this._parseNodeComment(prefix, node);
-    });
-}
 
 /**
  * Extract comments from Node and store it in a map.
@@ -316,7 +302,7 @@ YamlFile.prototype._parseComments = function(prefix, str) {
  * to the YAMLMap's value itself, but not the first element in the map
  *
  * @private
- */
+ *
 YamlFile.prototype._parseNodeComment = function(key, node, firstComment) {
     if (yaml.isPair(node)) {
         if (firstComment || node.key.commentBefore) {
@@ -339,18 +325,6 @@ YamlFile.prototype._parseNodeComment = function(key, node, firstComment) {
     }
 }
 
-/**
- * Constructs full element key by concatenating prefix and element's key.
- *
- * @param {String} prefix
- * @param {String} key
- * @returns {string}
- *
- * @private
- */
-YamlFile.prototype._normalizeKey = function(prefix, key) {
-    return (prefix ? prefix + "." : "") + key.toString().replace(/\./g, '\\.');
-}
 
 /**
  * Parse a target yml file, compare to source's entries
@@ -358,7 +332,7 @@ YamlFile.prototype._normalizeKey = function(prefix, key) {
  * one from the source, keep the value from the target file
  *
  * @param {String} str the string to parse
- */
+ *
 YamlFile.prototype.parseOutputFile = function(str) {
     var json = yaml.parse(str);
     this._mergeOutput(undefined, json, this.set, true);
@@ -367,7 +341,7 @@ YamlFile.prototype.parseOutputFile = function(str) {
 /**
  * Extract all of the resources from this file and keep them in
  * memory.
- */
+ *
 YamlFile.prototype.extract = function() {
     this.logger.debug("Extracting strings from " + this.pathName);
     if (this.pathName) {
@@ -412,7 +386,7 @@ YamlFile.prototype._loadSchema = function () {
  * Get the path name of this resource file.
  *
  * @returns {String} the path name to this file
- */
+ *
 YamlFile.prototype.getPath = function() {
     return this.pathName;
 };
@@ -421,7 +395,7 @@ YamlFile.prototype.getPath = function() {
  * Get the path name of schema file for the given resource file.
  *
  * @returns {String} the path name to this file
- */
+ *
 YamlFile.prototype.getSchemaPath = function() {
     if (this.pathName) {
         return this.pathName.replace(".yml", "-schema.json");
@@ -432,7 +406,7 @@ YamlFile.prototype.getSchemaPath = function() {
  * Get the schema object
  *
  * @returns {Object} the options loaded from the schema file
- */
+ *
 YamlFile.prototype.getSchema = function() {
     return this.schema;
 };
@@ -441,7 +415,7 @@ YamlFile.prototype.getSchema = function() {
  * Get the locale of this resource file.
  *
  * @returns {String} the locale spec of this file
- */
+ *
 YamlFile.prototype.getLocale = function() {
     return this.locale;
 };
@@ -450,7 +424,7 @@ YamlFile.prototype.getLocale = function() {
  * Get the locale of this resource file.
  *
  * @returns {String} the locale spec of this file
- */
+ *
 YamlFile.prototype.getContext = function() {
     return "";
 };
@@ -467,7 +441,7 @@ YamlFile.prototype.getContext = function() {
  *
  * @returns {String|undefined} the flavor of this file, or undefined
  * for no flavor
- */
+ *
 YamlFile.prototype.getFlavor = function() {
     return this.flavor;
 };
@@ -478,7 +452,7 @@ YamlFile.prototype.getFlavor = function() {
  * of mixed types (strings, arrays, or plurals).
  *
  * @returns {Resource} all of the resources available in this resource file.
- */
+ *
 YamlFile.prototype.getAll = function() {
     return this.set.getAll();
 };
@@ -490,7 +464,7 @@ YamlFile.prototype.getAll = function() {
  * the file.
  *
  * @param {Resource} res a resource to add to this file
- */
+ *
 YamlFile.prototype.addResource = function(res) {
     this.logger.trace("YamlFile.addResource: " + JSON.stringify(res) + " to " + this.project.getProjectId() + ", " + this.locale + ", " + JSON.stringify(this.context));
     if (res && res.getProject() === this.project.getProjectId()) {
@@ -510,7 +484,7 @@ YamlFile.prototype.addResource = function(res) {
  * Add every resource in the given array to this file.
  * @param {Array.<Resource>} resources an array of resources to add
  * to this file
- */
+ *
 YamlFile.prototype.addAll = function(resources) {
     if (resources && resources.length) {
         resources.forEach(function(resource) {
@@ -525,7 +499,7 @@ YamlFile.prototype.addAll = function(resources) {
  *
  * @returns {boolean} true if this resource file has been
  * modified since it was loaded
- */
+ *
 YamlFile.prototype.isDirty = function() {
     return this.set.isDirty();
 };
@@ -535,7 +509,7 @@ YamlFile.prototype.isDirty = function() {
  *
  * @private
  * @returns {String} the content of the resource file
- */
+ *
 YamlFile.prototype.getContent = function() {
     var json = {};
 
@@ -597,7 +571,7 @@ YamlFile.prototype.write = function() {};
  *
  * @returns {TranslationSet} The set of resources found in the
  * current Java file.
- */
+ *
 YamlFile.prototype.getTranslationSet = function() {
     return this.set;
 }
@@ -609,7 +583,7 @@ YamlFile.prototype.getTranslationSet = function() {
  *
  * @param {String} locale the locale spec for the target locale
  * @returns {String} the localized path name
- */
+ *
 YamlFile.prototype.getLocalizedPath = function(locale) {
     if (this.type.isLegacyMode()) {
         return this._getLocalizedPathLegacy(locale);
@@ -630,7 +604,7 @@ YamlFile.prototype.getLocalizedPath = function(locale) {
  *
  * @param {String} locale the locale spec for the target locale
  * @returns {String} the localized path name
- */
+ *
 YamlFile.prototype._getLocalizedPathLegacy = function(locale) {
     var fullPath = this.getOutputFilenameForLocale(locale);
     var dirName = path.dirname(fullPath);
@@ -644,7 +618,7 @@ YamlFile.prototype._getLocalizedPathLegacy = function(locale) {
 
 /**
  * @private
- */
+ *
 YamlFile.prototype._localizeContent = function(prefix, obj, translations, locale, localize) {
     var ret = {};
     this.resourceIndex = 0;
@@ -735,7 +709,7 @@ YamlFile.prototype._localizeContent = function(prefix, obj, translations, locale
  * @param {TranslationSet} translations the current set of translations
  * @param {String} locale the locale to translate to
  * @returns {String} the localized text of this file
- */
+ *
 YamlFile.prototype.localizeText = function(translations, locale) {
     var output = "";
     if (this.json) {
@@ -769,7 +743,7 @@ YamlFile.prototype.localizeText = function(translations, locale) {
  * @param {TranslationSet} translations the current set of
  * translations
  * @param {Array.<String>} locales array of locales to translate to
- */
+ *
 YamlFile.prototype.localize = function(translations, locales) {
     // don't localize if there is no text
     if (this.json) {
@@ -806,7 +780,7 @@ YamlFile.prototype.localize = function(translations, locales) {
  * 'excluded_keys' are used for backward compatibility reason.
  *
  * @return {Array.<String>} keys that should not be localized at output time
- */
+ *
 YamlFile.prototype.getExcludedKeysFromSchema = function() {
     if (this.schema) {
         if (Array.isArray(this.schema['excludedKeys'])) {
@@ -825,7 +799,7 @@ YamlFile.prototype.getExcludedKeysFromSchema = function() {
  *
  * @return {Boolean} whether output should be written to directory for locale,
  * or kept in same directory as source.
- */
+ *
 YamlFile.prototype.getUseLocalizedDirectoriesFromSchema = function() {
     if (this.schema && typeof(this.schema['useLocalizedDirectories']) === "boolean") {
         return this.schema['useLocalizedDirectories'];
@@ -839,7 +813,7 @@ YamlFile.prototype.getUseLocalizedDirectoriesFromSchema = function() {
  * @param {String} locale locale for which to look for a custom filename
  * @return {String} string filename specified for the given locale in the schema object
  *  defaults to file's own pathname
- */
+ *
 YamlFile.prototype.getOutputFilenameForLocale = function(locale) {
     if (
         this.schema && this.schema['outputFilenameMapping']
@@ -854,7 +828,7 @@ YamlFile.prototype.getOutputFilenameForLocale = function(locale) {
  * Extract values of key 'commentPrefix' from the loaded schema
  *
  * @returns {String|undefined}
- */
+ *
 YamlFile.prototype.getCommentPrefix = function() {
     if (this.schema && typeof(this.schema['commentPrefix']) === 'string') {
         return this.schema['commentPrefix'];
@@ -864,3 +838,4 @@ YamlFile.prototype.getCommentPrefix = function() {
 }
 
 module.exports = YamlFile;
+*/
