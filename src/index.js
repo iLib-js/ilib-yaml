@@ -18,7 +18,7 @@
  */
 
 import * as yamllib from 'yaml';
-import { ResourceString, TranslationSet } from 'ilib-tools-common';
+import { ResourceString, ResourceArray, TranslationSet } from 'ilib-tools-common';
 
 /**
  * @class Represents a yaml source file.
@@ -52,6 +52,9 @@ class Yaml {
      * @param {string} props.state The state to apply to every Resource instance
      * @param {string} props.datatype The datatype to apply to every Resource instance
      * @param {string} props.flavor The flavor to apply to every Resource instance
+     * @param {string} props.commentPrefix if a comment for a yaml entry begins with this
+     * string, that prefix will be stripped off of the comment automatically before being
+     * attached to the new Resource as a translator's comment
      * @param {Function(string, string)} props.filter Provide a filter that tells whether
      * or not the current key/value pair should be included as a Resource. This filter
      * is called on each yaml entry before the Resource is created. If the filter returns
@@ -68,6 +71,7 @@ class Yaml {
             this.state = props.state;
             this.datatype = props.datatype;
             this.flavor = props.flavor;
+            this.commentPrefix = props.commentPrefix;
             this.filter = typeof(props.filter) === "function" ? props.filter : undefined;
         }
 
@@ -127,11 +131,11 @@ class Yaml {
      *
      * @private
      */
-    parseComments = function() {
-        if (!this.json) return; // can't parse undefined!
-debugger;
+    parseComments() {
+        if (!this.document) return; // can't parse undefined!
+
         this.document.contents.items.forEach(node => {
-            this.parseNodeComment(node);
+            this.parseNodeComment(undefined, node, this.document.contents.commentBefore);
         });
     }
 
@@ -140,12 +144,45 @@ debugger;
      */
     parseResources(prefix, obj, set, localize) {
         const locale = this.locale;
-        for (var key in obj) {
+        for (let key in obj) {
+            const reskey = this.normalizeKey(prefix, key);
             if (typeof(obj[key]) === "object") {
-                this.parseResources(this.normalizeKey(prefix, key), obj[key], set, localize);
+                if (Array.isArray(obj[key])) {
+                    let params = {
+                        resType: "array",
+                        project: this.project,
+                        key: reskey,
+                        autoKey: true,
+                        pathName: this.pathName,
+                        datatype: this.datatype,
+                        localize: localize,
+                        index: this.resourceIndex++
+                    };
+                    if (locale === this.sourceLocale || this.flavor) {
+                        params.sourceLocale = locale;
+                        params.source = obj[key];
+                        params.flavor = this.flavor;
+                    } else {
+                        params.sourceLocale = this.project.sourceLocale;
+                        params.target = obj[key];
+                        params.targetLocale = locale;
+                    }
+
+                    if (this.commentsMap.has(reskey)) {
+                        const comment = this.commentsMap.get(reskey).trim();
+                        params.comment = (this.commentPrefix && comment.startsWith(this.commentPrefix)) ?
+                            comment.slice(this.commentPrefix.length).trim() :
+                            comment;
+                    }
+
+                    const res = new ResourceArray(params);
+
+                    set.add(res);
+                } else {
+                    this.parseResources(this.normalizeKey(prefix, key), obj[key], set, localize);
+                }
             } else if (localize) {
                 const resource = obj[key];
-                const reskey = this.normalizeKey(prefix, key);
 
                 // we check if filter is a function in the constructor
                 if (this.filter && !this.filter(reskey, resource)) {
@@ -154,7 +191,7 @@ debugger;
                 }
 
                 // this.logger.trace("Adding string resource " + JSON.stringify(resource) + " locale " + this.getLocale());
-                var params = {
+                let params = {
                     resType: "string",
                     project: this.project,
                     key: reskey,
@@ -176,13 +213,9 @@ debugger;
 
                 if (this.commentsMap.has(reskey)) {
                     const comment = this.commentsMap.get(reskey).trim();
-                    if (this.getCommentPrefix()) {
-                        if (comment.startsWith(this.getCommentPrefix())) {
-                            params.comment = comment.slice(this.getCommentPrefix().length).trim();
-                        }
-                    } else {
-                        params.comment = comment;
-                    }
+                    params.comment = (this.commentPrefix && comment.startsWith(this.commentPrefix)) ?
+                        comment.slice(this.commentPrefix.length).trim() :
+                        comment;
                 }
 
                 const res = new ResourceString(params);
@@ -214,9 +247,61 @@ debugger;
         this.parseResources(undefined, this.json, this.set, true);
     }
 
-    serialize() {}
+    /**
+     * Serialize the Resources in this instance into a yaml file format and
+     * return it as a string.
+     *
+     * @returns {string} the Resources in this instance as a yaml file
+     */
+    serialize() {
+        let json = {};
 
-    getResource(id) {}
+        if (this.set.isDirty()) {
+            const resources = this.set.getAll();
+
+            for (let j = 0; j < resources.length; j++) {
+                let resource = resources[j];
+                if (resource.getTarget() || resource.getSource()) {
+                    let key = resource.getKey();
+                    let lastKey = key;
+                    let parent = json;
+                    if (key && key.length) {
+                        let parts = key.split(/(?<!\\)\./g);
+                        if (parts.length > 1) {
+                            for (let i = 0; i < parts.length-1; i++) {
+                                if (!parent[parts[i]]) {
+                                    parent[parts[i]] = {};
+                                }
+                                parent = parent[parts[i]];
+                            }
+                        }
+                        lastKey = parts[parts.length-1];
+                    }
+                    lastKey = lastKey.replace(/\\./g, '.');
+                    // this.logger.trace("writing translation for " + resource.getKey() + " as " + (resource.getTarget() || resource.getSource()));
+                    parent[lastKey] = resource.getTarget() || resource.getSource();
+                //} else {
+                //    this.logger.warn("String resource " + resource.getKey() + " has no source text. Skipping...");
+                }
+            }
+        }
+
+        // this.logger.trace("json is " + JSON.stringify(json));
+
+        // now convert the json back to yaml
+        return yamllib.stringify(json, {
+            schema: 'failsafe',
+            sortMapEntries: true,
+            lineWidth: 0,
+            doubleQuotedAsJSON: true
+        });
+    }
+
+    getResource(id) {
+        return this.set.getBy({
+            id
+        });
+    }
 
     /**
      * Return the set of resources in this yaml file.
@@ -236,9 +321,37 @@ debugger;
         return this.set;
     }
 
-    addResource(resource) {}
+    /**
+     * Add a resource to this instance. The locale of the resource
+     * should correspond to the locale of the file, and the
+     * context of the resource should match the context of
+     * the file.
+     *
+     * @param {Resource} res a resource to add to this file
+     * @returns {boolean} if the resource was added successfully, and false otherwise
+     */
+    addResource(resource) {
+        if (typeof(resource) === "object" && resource && resource.getProject() === this.project) {
+            // this.logger.trace("correct project. Adding.");
+            this.set.add(resource);
+            return true;
+        }
+        return false;
+    }
 
-    addResources(resourceArray) {}
+    /**
+     * Add an array of resources to this instance.
+     * @param {Array<Resource>} resourceArray the array of resources to add
+     * @returns {boolean} true if all resources were added successfully, and false otherwise
+     */
+    addResources(resourceArray) {
+        if (!Array.isArray(resourceArray)) {
+            return false;
+        }
+        return resourceArray.every(resource => {
+            return this.addResource(resource);
+        });
+    }
 }
 
 export default Yaml;
@@ -248,18 +361,18 @@ export default Yaml;
  * @private
  *
 YamlFile.prototype._mergeOutput = function(prefix, obj, set) {
-    for (var key in obj) {
+    for (let key in obj) {
         if (typeof(obj[key]) === "object") {
             this._mergeOutput(this._normalizeKey(prefix, key), obj[key], set);
         } else {
-            var resource = obj[key];
+            let resource = obj[key];
             if (this._isTranslatable(resource)) {
                 this.logger.trace("Found string resource " + JSON.stringify(resource) + " with key " + key + " locale " + this.getLocale());
-                var resources = (this.getLocale() === this.project.sourceLocale) ?
+                let resources = (this.getLocale() === this.project.sourceLocale) ?
                     set.getBy({reskey: key, pathName: this.pathName, sourceLocale: this.getLocale(), project: this.project.getProjectId()}) :
                     set.getBy({reskey: key, pathName: this.pathName, targetLocale: this.getLocale(), project: this.project.getProjectId()});
 
-                var existing = resources && resources[0];
+                let existing = resources && resources[0];
                 if (existing && !existing.getLocalize()) {
                     // modify in place
                     if (this.getLocale() === this.project.sourceLocale) {
@@ -285,7 +398,7 @@ YamlFile.prototype._mergeOutput = function(prefix, obj, set) {
 YamlFile.prototype.parse = function(str) {
     this.resourceIndex = 0;
     this.json = yaml.parse(str);
-    var prefix = this.pathName ? this.API.utils.hashKey(path.normalize(this.pathName)) : undefined;
+    let prefix = this.pathName ? this.API.utils.hashKey(path.normalize(this.pathName)) : undefined;
     this._parseComments(prefix, str);
     this._parseResources(prefix, this.json, this.set, true);
 };
@@ -334,53 +447,10 @@ YamlFile.prototype._parseNodeComment = function(key, node, firstComment) {
  * @param {String} str the string to parse
  *
 YamlFile.prototype.parseOutputFile = function(str) {
-    var json = yaml.parse(str);
+    let json = yaml.parse(str);
     this._mergeOutput(undefined, json, this.set, true);
 };
 
-/**
- * Extract all of the resources from this file and keep them in
- * memory.
- *
-YamlFile.prototype.extract = function() {
-    this.logger.debug("Extracting strings from " + this.pathName);
-    if (this.pathName) {
-        var p = path.join(this.project.root, this.pathName);
-        try {
-            var data = fs.readFileSync(p, "utf8");
-            if (data) {
-                this.parse(data);
-            }
-        } catch (e) {
-            this.logger.warn("Could not read file: " + p);
-            this.logger.warn(e);
-        }
-    }
-
-    // mark this set as not dirty after we read it from disk
-    // so we can tell when other code has added resources to it
-    this.set.setClean();
-};
-
-YamlFile.prototype._loadSchema = function () {
-    if (!this.type.isLegacyMode()) {
-        this.schema = this.mapping;
-        return;
-    }
-
-    // Legacy schema handling.
-    if (this.getSchemaPath()) {
-        var p = path.join(this.project.root, this.getSchemaPath());
-        try {
-            var data = fs.readFileSync(p, "utf8");
-            if (data) {
-                this.schema = JSON.parse(data);
-            }
-        } catch (e) {
-            this.logger.warn("No schema file found at " + p);
-        }
-    }
-}
 
 /**
  * Get the path name of this resource file.
@@ -392,69 +462,12 @@ YamlFile.prototype.getPath = function() {
 };
 
 /**
- * Get the path name of schema file for the given resource file.
- *
- * @returns {String} the path name to this file
- *
-YamlFile.prototype.getSchemaPath = function() {
-    if (this.pathName) {
-        return this.pathName.replace(".yml", "-schema.json");
-    }
-};
-
-/**
- * Get the schema object
- *
- * @returns {Object} the options loaded from the schema file
- *
-YamlFile.prototype.getSchema = function() {
-    return this.schema;
-};
-
-/**
  * Get the locale of this resource file.
  *
  * @returns {String} the locale spec of this file
  *
 YamlFile.prototype.getLocale = function() {
     return this.locale;
-};
-
-/**
- * Get the locale of this resource file.
- *
- * @returns {String} the locale spec of this file
- *
-YamlFile.prototype.getContext = function() {
-    return "";
-};
-
-/**
- * Get the flavor of this resource file. The flavor determines
- * the customization of the strings, which allows for different English
- * source strings for the same resource key based on the flavor. For
- * example, if your app has the string "Log-in" when there is no flavor,
- * it might have the strings "Enter your partner ID:" for one partner,
- * and "Enter your member number:" for a different partner. Each of the
- * strings with a different flavor is a source string that needs to be
- * translated separately, even though they have the same key.
- *
- * @returns {String|undefined} the flavor of this file, or undefined
- * for no flavor
- *
-YamlFile.prototype.getFlavor = function() {
-    return this.flavor;
-};
-
-
-/**
- * Get all resources from this file. This will return all resources
- * of mixed types (strings, arrays, or plurals).
- *
- * @returns {Resource} all of the resources available in this resource file.
- *
-YamlFile.prototype.getAll = function() {
-    return this.set.getAll();
 };
 
 /**
@@ -511,24 +524,24 @@ YamlFile.prototype.isDirty = function() {
  * @returns {String} the content of the resource file
  *
 YamlFile.prototype.getContent = function() {
-    var json = {};
+    let json = {};
 
     if (this.set.isDirty()) {
-        var resources = this.set.getAll();
+        let resources = this.set.getAll();
 
-        for (var j = 0; j < resources.length; j++) {
-            var target, resource = resources[j];
+        for (let j = 0; j < resources.length; j++) {
+            let target, resource = resources[j];
             if (resource.resType === "plural" || resource.getTarget() || resource.getSource()) {
-                var key = resource.getKey();
-                var lastKey = key;
-                var parent = json;
+                let key = resource.getKey();
+                let lastKey = key;
+                let parent = json;
                 if (key && key.length) {
-                    var parts = key.split(/(?<!\\)\./g);
+                    let parts = key.split(/(?<!\\)\./g);
                     if (parts.length > 1 && parts[0] == this.API.utils.hashKey(path.normalize(this.pathName))) {
                         parts = parts.slice(1);
                     }
                     if (parts.length > 1) {
-                        for (var i = 0; i < parts.length-1; i++) {
+                        for (let i = 0; i < parts.length-1; i++) {
                             if (!parent[parts[i]]) {
                                 parent[parts[i]] = {};
                             }
@@ -589,7 +602,7 @@ YamlFile.prototype.getLocalizedPath = function(locale) {
         return this._getLocalizedPathLegacy(locale);
     }
 
-    var mapping = this.mapping || this.type.getMapping(this.pathName) || this.type.getDefaultMapping();
+    let mapping = this.mapping || this.type.getMapping(this.pathName) || this.type.getDefaultMapping();
 
     return path.normalize(this.API.utils.formatPath(mapping.template, {
         sourcepath: this.pathName,
@@ -606,11 +619,11 @@ YamlFile.prototype.getLocalizedPath = function(locale) {
  * @returns {String} the localized path name
  *
 YamlFile.prototype._getLocalizedPathLegacy = function(locale) {
-    var fullPath = this.getOutputFilenameForLocale(locale);
-    var dirName = path.dirname(fullPath);
-    var fileName = path.basename(fullPath);
+    let fullPath = this.getOutputFilenameForLocale(locale);
+    let dirName = path.dirname(fullPath);
+    let fileName = path.basename(fullPath);
     if (this.getUseLocalizedDirectoriesFromSchema()) {
-        var fullDir = path.join(dirName, locale);
+        let fullDir = path.join(dirName, locale);
         return path.join(fullDir, fileName);
     }
     return fullPath;
@@ -620,21 +633,21 @@ YamlFile.prototype._getLocalizedPathLegacy = function(locale) {
  * @private
  *
 YamlFile.prototype._localizeContent = function(prefix, obj, translations, locale, localize) {
-    var ret = {};
+    let ret = {};
     this.resourceIndex = 0;
 
-    for (var key in obj) {
+    for (let key in obj) {
         if (typeof(obj[key]) === "object") {
             if (obj[key]) {
-                var localizeChildren = localize && (this.getExcludedKeysFromSchema().indexOf(key) === -1);
+                let localizeChildren = localize && (this.getExcludedKeysFromSchema().indexOf(key) === -1);
                 ret[key] = this._localizeContent(this._normalizeKey(prefix, key), obj[key], translations, locale, localizeChildren);
             } else {
                 ret[key] = "";
             }
         } else if (localize && this.getExcludedKeysFromSchema().indexOf(key) === -1) {
-            var resource = obj[key];
+            let resource = obj[key];
             if (this._isTranslatable(resource)) {
-                var tester = this.API.newResource({
+                let tester = this.API.newResource({
                     resType: "string",
                     project: this.project.getProjectId(),
                     sourceLocale: this.project.getSourceLocale(),
@@ -642,17 +655,17 @@ YamlFile.prototype._localizeContent = function(prefix, obj, translations, locale
                     pathName: this.pathName,
                     datatype: this.type.datatype
                 });
-                var hashkey = tester.hashKeyForTranslation(locale);
+                let hashkey = tester.hashKeyForTranslation(locale);
 
                 this.logger.trace("Localizing string resource " + JSON.stringify(resource) + " locale " + locale);
-                var res = translations.get(hashkey);
+                let res = translations.get(hashkey);
                 if (locale === this.project.pseudoLocale && this.project.settings.nopseudo) {
                     ret[key] = obj[key].toString();
                 } else if (!res && this.type && this.type.pseudos[locale]) {
-                    var source, sourceLocale = this.type.pseudos[locale].getPseudoSourceLocale();
+                    let source, sourceLocale = this.type.pseudos[locale].getPseudoSourceLocale();
                     if (sourceLocale !== this.project.sourceLocale) {
                         // translation is derived from a different locale's translation instead of from the source string
-                        var sourceRes = translations.get(tester.hashKeyForTranslation(sourceLocale));
+                        let sourceRes = translations.get(tester.hashKeyForTranslation(sourceLocale));
                         source = sourceRes ? sourceRes.getTarget() : obj[key].toString();
                         ret[key] = this.type.pseudos[locale].getString(source);
                         this.dirty |= (sourceRes && ret[key] !== source);
@@ -667,7 +680,7 @@ YamlFile.prototype._localizeContent = function(prefix, obj, translations, locale
                         ret[key] = res.getTarget();
                         this.dirty |= (ret[key] !== res.getSource());
                     } else {
-                        var note = res ? 'The source string has changed. Please update the translation to match if necessary. Previous source: "' + res.getSource() + '"' : undefined;
+                        let note = res ? 'The source string has changed. Please update the translation to match if necessary. Previous source: "' + res.getSource() + '"' : undefined;
                         if (this.type) {
                             this.type.newres.add(this.API.newResource({
                                 resType: "string",
@@ -711,11 +724,11 @@ YamlFile.prototype._localizeContent = function(prefix, obj, translations, locale
  * @returns {String} the localized text of this file
  *
 YamlFile.prototype.localizeText = function(translations, locale) {
-    var output = "";
+    let output = "";
     if (this.json) {
         this.dirty = false;
-        var prefix = this.pathName ? this.API.utils.hashKey(path.normalize(this.pathName)) : undefined;
-        var localizedJson = this._localizeContent(prefix, this.json, translations, locale, true);
+        let prefix = this.pathName ? this.API.utils.hashKey(path.normalize(this.pathName)) : undefined;
+        let localizedJson = this._localizeContent(prefix, this.json, translations, locale, true);
         if (localizedJson) {
             this.logger.trace("Localized json is: " + JSON.stringify(localizedJson, undefined, 4));
 
@@ -747,14 +760,14 @@ YamlFile.prototype.localizeText = function(translations, locale) {
 YamlFile.prototype.localize = function(translations, locales) {
     // don't localize if there is no text
     if (this.json) {
-        for (var i = 0; i < locales.length; i++) {
-            var p, pathName = this.getLocalizedPath(locales[i]);
+        for (let i = 0; i < locales.length; i++) {
+            let p, pathName = this.getLocalizedPath(locales[i]);
             this.logger.debug("Checking for existing output file " + pathName);
 
             try {
                 p = path.join(this.project.root, pathName);
                 if (fs.existsSync(p)) {
-                    var data = fs.readFileSync(p, "utf8");
+                    let data = fs.readFileSync(p, "utf8");
                     if (data) {
                         this.parseOutputFile(data);
                     }
@@ -766,7 +779,7 @@ YamlFile.prototype.localize = function(translations, locales) {
 
             this.logger.debug("Writing file " + pathName);
             p = path.join(this.project.target, pathName);
-            var dir = path.dirname(p);
+            let dir = path.dirname(p);
             this.API.utils.makeDirs(dir);
             fs.writeFileSync(p, this.localizeText(translations, locales[i]), "utf-8");
         }
@@ -822,19 +835,6 @@ YamlFile.prototype.getOutputFilenameForLocale = function(locale) {
         return this.schema['outputFilenameMapping'][locale];
     }
     return path.normalize(this.pathName);
-}
-
-/**
- * Extract values of key 'commentPrefix' from the loaded schema
- *
- * @returns {String|undefined}
- *
-YamlFile.prototype.getCommentPrefix = function() {
-    if (this.schema && typeof(this.schema['commentPrefix']) === 'string') {
-        return this.schema['commentPrefix'];
-    }
-
-    return undefined;
 }
 
 module.exports = YamlFile;

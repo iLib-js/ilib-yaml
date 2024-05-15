@@ -18,6 +18,7 @@
  */
 
 import Yaml from '../src/index.js';
+import { ResourceString } from 'ilib-tools-common';
 
 function diff(a, b) {
     var min = Math.min(a.length, b.length);
@@ -308,7 +309,7 @@ describe("yamlfile", () => {
             }
         });
         expect(yml).toBeTruthy();
-debugger;
+
         yml.deserialize(
             'duration:\n' +
             '  top_header: Refine Your Query\n' +
@@ -349,13 +350,9 @@ debugger;
         expect(r[5].getKey()).toBe("duration.variations.asdf.c");
     });
 
-/*
-    test("Yaml ParseSimpleRightSize", () => {
+    test("Yaml parse simple right size", () => {
         expect.assertions(4);
-        var yml = new Yaml({
-            project: p,
-            type: yft
-        });
+        var yml = new Yaml();
         expect(yml).toBeTruthy();
         var set = yml.getTranslationSet();
         expect(set.size()).toBe(0);
@@ -370,15 +367,14 @@ debugger;
         expect(set).toBeTruthy();
         expect(set.size()).toBe(4);
     });
-    test("Yaml ParseComments", () => {
+
+    test("Yaml parse comments", () => {
         expect.assertions(19);
-        var yml = new Yaml({
-            project: p,
-            type: yft
-        });
+        var yml = new Yaml();
         expect(yml).toBeTruthy();
         var set = yml.getTranslationSet();
         expect(set.size()).toBe(0);
+debugger;
         yml.deserialize('#first_a comment\n' +
             'first_a:\n' +
             '  #second_a comment\n' +
@@ -413,12 +409,10 @@ debugger;
         expect(r[4].getKey()).toBe("first_b.second_d");
         expect(r[4].getComment()).toBe("");
     });
-    test("Yaml ParseCommentTrim", () => {
+
+    test("Yaml parse comments with trimming", () => {
         expect.assertions(5);
-        var yml = new Yaml({
-            project: p,
-            type: yft
-        });
+        var yml = new Yaml();
         expect(yml).toBeTruthy();
         yml.deserialize('# space before\n' +
             'first: "string"\n' +
@@ -433,12 +427,10 @@ debugger;
         expect(r[1].getComment()).toBe("space after");
         expect(r[2].getComment()).toBe("space both multiple");
     });
-    test("Yaml ParseCommentMultiline", () => {
+
+    test("Yaml parse comments in multiline form", () => {
         expect.assertions(5);
-        var yml = new Yaml({
-            project: p,
-            type: yft
-        });
+        var yml = new Yaml();
         expect(yml).toBeTruthy();
         yml.deserialize('first: "string"\n' +
             '# this is multiline\n' +
@@ -452,15 +444,34 @@ debugger;
         expect(r[1].getComment()).toBe("this is multiline\n comment");
         expect(r[2].getComment()).toBe(undefined);
     });
-    test("Yaml ParseArray", () => {
-        expect.assertions(14);
+
+    test("Yaml parse comments with a prefix", () => {
+        expect.assertions(5);
         var yml = new Yaml({
-            project: p,
-            type: yft
+            commentPrefix: "i18n: "
         });
+        expect(yml).toBeTruthy();
+        yml.deserialize('# i18n: space before\n' +
+            'first: "string"\n' +
+            '#space after \n' +
+            'second: "string"\n' +
+            '#   i18n:   space both multiple        \n' +
+            'third: "string"');
+        var set = yml.getTranslationSet();
+        expect(set.size()).toBe(3);
+        var r = set.getAll();
+        expect(r[0].getComment()).toBe("space before");
+        expect(r[1].getComment()).toBe("space after");
+        expect(r[2].getComment()).toBe("space both multiple");
+    });
+
+    test("Yaml parse array", () => {
+        expect.assertions(11);
+        var yml = new Yaml();
         expect(yml).toBeTruthy();
         var set = yml.getTranslationSet();
         expect(set.size()).toBe(0);
+
         yml.deserialize(
                 '---\n' +
                 'Jobs:\n' +
@@ -473,25 +484,25 @@ debugger;
         expect(set).toBeTruthy();
         var r = set.getAll();
         expect(r).toBeTruthy();
-        expect(r.length).toBe(4);
-        expect(r[0].getSource()).toBe("one and");
-        expect(r[0].getKey()).toBe("Jobs.0");
-        expect(r[1].getSource()).toBe("two and");
-        expect(r[1].getKey()).toBe("Jobs.1");
-        expect(r[2].getSource()).toBe("three");
-        expect(r[2].getKey()).toBe("Jobs.2");
-        expect(r[3].getSource()).toBe("four");
-        expect(r[3].getKey()).toBe("Jobs.3");
+        expect(r.length).toBe(1);
+
+        expect(r[0].getType()).toBe("array");
+
+        const entries = r[0].getSource();
+
+        expect(entries[0]).toBe("one and");
+        expect(entries[1]).toBe("two and");
+        expect(entries[2]).toBe("three");
+        expect(entries[3]).toBe("four");
     });
-    test("YamlParseArrayComments", () => {
-        expect.assertions(18);
-        var yml = new Yaml({
-            project: p,
-            type: yft
-        });
+
+    test("Yaml parse array with comments", () => {
+        expect.assertions(11);
+        var yml = new Yaml();
         expect(yml).toBeTruthy();
         var set = yml.getTranslationSet();
         expect(set.size()).toBe(0);
+
         yml.deserialize(
             '---\n' +
             '#first level comment\n' +
@@ -507,26 +518,22 @@ debugger;
         expect(set).toBeTruthy();
         var r = set.getAll();
         expect(r).toBeTruthy();
-        expect(r.length).toBe(4);
-        expect(r[0].getSource()).toBe("one and");
-        expect(r[0].getKey()).toBe("Jobs.0");
-        expect(r[0].getComment()).toBe(undefined);
-        expect(r[1].getSource()).toBe("two and");
-        expect(r[1].getKey()).toBe("Jobs.1");
-        expect(r[1].getComment()).toBe("second level comment");
-        expect(r[2].getSource()).toBe("three");
-        expect(r[2].getKey()).toBe("Jobs.2");
-        expect(r[2].getComment()).toBe(undefined);
-        expect(r[3].getSource()).toBe("four");
-        expect(r[3].getKey()).toBe("Jobs.3");
-        expect(r[3].getComment()).toBe("second level comment");
+        expect(r.length).toBe(1);
+
+        expect(r[0].getComment()).toBe("first level comment");
+
+        const entries = r[0].getSource();
+
+        expect(entries[0]).toBe("one and");
+        expect(entries[1]).toBe("two and");
+        expect(entries[2]).toBe("three");
+        expect(entries[3]).toBe("four");
     });
-    test("Yaml ParseArrayWithIds", () => {
+
+/*
+    test("Yaml parse array with Ids instead of strings", () => {
         expect.assertions(18);
-        var yml = new Yaml({
-            project: p,
-            type: yft
-        });
+        var yml = new Yaml();
         expect(yml).toBeTruthy();
         var set = yml.getTranslationSet();
         expect(set.size()).toBe(0);
@@ -579,6 +586,8 @@ debugger;
         expect(r[5].getSource()).toBe("orange");
         expect(r[5].getKey()).toBe("options.1.color");
     });
+
+    /*
     test("Yaml ParseIgnoreUnderscoreValues", () => {
         expect.assertions(3);
         var yml = new Yaml({
@@ -757,208 +766,313 @@ debugger;
         expect(set).toBeTruthy();
         expect(set.size()).toBe(0);
     });
-    test("Yaml ExtractFile", () => {
-        expect.assertions(14);
+    */
+
+    test("Yaml add resources", () => {
+        expect.assertions(3);
+
         var yml = new Yaml({
-            project: p,
-            type: yft,
-            pathName: "./test.yml"
-        });
-        expect(yml).toBeTruthy();
-        // should read the file
-        yml.extract();
-        var set = yml.getTranslationSet();
-        expect(set.size()).toBe(10);
-        var r = set.getBy({
-            reskey: "r343014569.Marketing"
-        });
-        expect(r).toBeTruthy();
-        expect(r[0].getSource()).toBe("Marketing");
-        expect(r[0].getKey()).toBe("r343014569.Marketing");
-        expect(!r[0].getComment()).toBeTruthy();
-        var r = set.getBy({
-            reskey: "r343014569.Everyone_at_MyCompany_has_not_only_welcomed_us_interns,_but_given_us_a_chance_to_ask_questions_and_really_learn_about_what_they_do\\._That's_why_I'm_thrilled_to_be_a_part_of_this_team_and_part_of_a_company_that_will,_I'm_sure,_soon_be_a_household_name\\."
-        });
-        expect(r).toBeTruthy();
-        expect(r[0].getSource()).toBe("Everyone at MyCompany has not only welcomed us interns, but given us a chance to ask questions and really learn about what they do. That's why I'm thrilled to be a part of this team and part of a company that will, I'm sure, soon be a household name.");
-        expect(r[0].getKey()).toBe("r343014569.Everyone_at_MyCompany_has_not_only_welcomed_us_interns,_but_given_us_a_chance_to_ask_questions_and_really_learn_about_what_they_do\\._That's_why_I'm_thrilled_to_be_a_part_of_this_team_and_part_of_a_company_that_will,_I'm_sure,_soon_be_a_household_name\\.");
-        expect(!r[0].getComment()).toBeTruthy();
-        var r = set.getBy({
-            reskey: "r343014569.Learn_by_contributing_to_a_venture_that_will_change_the_world"
-        });
-        expect(r).toBeTruthy();
-        expect(r[0].getSource()).toBe("Learn by contributing to a venture that will change the world");
-        expect(r[0].getKey()).toBe("r343014569.Learn_by_contributing_to_a_venture_that_will_change_the_world");
-        expect(!r[0].getComment()).toBeTruthy();
-    });
-    test("Yaml ExtractUndefinedFile", () => {
-        expect.assertions(2);
-        var yml = new Yaml({
-            project: p,
-            type: yft
-        });
-        expect(yml).toBeTruthy();
-        // should attempt to read the file and not fail
-        yml.extract();
-        var set = yml.getTranslationSet();
-        expect(set.size()).toBe(0);
-    });
-    test("Yaml ExtractBogusFile", () => {
-        expect.assertions(2);
-        var yml = new Yaml({
-            project: p,
-            type: yft,
-            pathName: "./objc/en.lproj/asdf.yml"
-        });
-        expect(yml).toBeTruthy();
-        // should attempt to read the file and not fail
-        yml.extract();
-        var set = yml.getTranslationSet();
-        expect(set.size()).toBe(0);
-    });
-    test("Yaml GetContent", () => {
-        expect.assertions(2);
-        var yml = new Yaml({
-            project: p,
-            type: yft,
+            project: "webapp",
             pathName: "./asdf.yml",
             locale: "de-DE"
         });
         expect(yml).toBeTruthy();
         [
-            new ContextResourceString({
+            new ResourceString({
                 project: "webapp",
                 sourceLocale: "de-DE",
-                key: "r699351263.source_text",
+                key: "source_text",
                 source: "Quellen\"text",
                 comment: "foo",
                 path: "asdf.yml",
                 context: "asdf.yml"
             }),
-            new ContextResourceString({
+            new ResourceString({
                 project: "webapp",
                 sourceLocale: "de-DE",
-                key: "r699351263.more_source_text",
+                key: "more_source_text",
                 source: "mehr Quellen\"text",
                 comment: "bar",
                 path: "asdf.yml",
                 context: "asdf.yml"
             })
-        ].forEach(function(res) {
-            yml.addResource(res);
+        ].forEach(res => {
+            expect(yml.addResource(res)).toBe(true);
         });
-        diff(yml.getContent(),
-            'more_source_text: mehr Quellen\"text\n' +
-            'source_text: Quellen\"text\n'
-        );
-        expect(yml.getContent()).toBe('more_source_text: mehr Quellen\"text\n' +
-            'source_text: Quellen\"text\n'
-        );
     });
-    test("Yaml GetContentComplicated", () => {
-        expect.assertions(2);
+
+    test("Yaml add resources rejects resources with the wrong project name", () => {
+        expect.assertions(3);
+
         var yml = new Yaml({
-            project: p,
-            type: yft,
+            project: "webapp",
+            pathName: "./asdf.yml",
+            locale: "de-DE"
+        });
+        expect(yml).toBeTruthy();
+        [
+            new ResourceString({
+                project: "a",
+                sourceLocale: "de-DE",
+                key: "source_text",
+                source: "Quellen\"text",
+                comment: "foo",
+                path: "asdf.yml",
+                context: "asdf.yml"
+            }),
+            new ResourceString({
+                project: "b",
+                sourceLocale: "de-DE",
+                key: "more_source_text",
+                source: "mehr Quellen\"text",
+                comment: "bar",
+                path: "asdf.yml",
+                context: "asdf.yml"
+            })
+        ].forEach(res => {
+            expect(yml.addResource(res)).toBe(false);
+        });
+    });
+
+    test("Yaml add resources rejects resources that are not objects", () => {
+        expect.assertions(5);
+
+        var yml = new Yaml({
+            project: "webapp",
+            pathName: "./asdf.yml",
+            locale: "de-DE"
+        });
+        expect(yml).toBeTruthy();
+        [
+            undefined,
+            null,
+            true,
+            4.0
+        ].forEach(res => {
+            expect(yml.addResource(res)).toBe(false);
+        });
+    });
+
+    test("Yaml add resource and then serialize", () => {
+        expect.assertions(4);
+
+        var yml = new Yaml({
+            project: "webapp",
+            pathName: "./asdf.yml",
+            locale: "de-DE"
+        });
+        expect(yml).toBeTruthy();
+        [
+            new ResourceString({
+                project: "webapp",
+                sourceLocale: "de-DE",
+                key: "source_text",
+                source: "Quellen\"text",
+                comment: "foo",
+                path: "asdf.yml",
+                context: "asdf.yml"
+            }),
+            new ResourceString({
+                project: "webapp",
+                sourceLocale: "de-DE",
+                key: "more_source_text",
+                source: "mehr Quellen\"text",
+                comment: "bar",
+                path: "asdf.yml",
+                context: "asdf.yml"
+            })
+        ].forEach(res => {
+            expect(yml.addResource(res)).toBe(true);
+        });
+        const actual = yml.serialize();
+        const expected =
+            'more_source_text: mehr Quellen\"text\n' +
+            'source_text: Quellen\"text\n';
+        diff(actual, expected);
+        expect(actual).toBe(expected);
+    });
+
+    test("Yaml add resources as an array and then serialize", () => {
+        expect.assertions(3);
+        var yml = new Yaml({
+            project: "webapp",
+            pathName: "./asdf.yml",
+            locale: "de-DE"
+        });
+        expect(yml).toBeTruthy();
+        expect(yml.addResources([
+            new ResourceString({
+                project: "webapp",
+                sourceLocale: "de-DE",
+                key: "source_text",
+                source: "Quellen\"text",
+                comment: "foo",
+                path: "asdf.yml",
+                context: "asdf.yml"
+            }),
+            new ResourceString({
+                project: "webapp",
+                sourceLocale: "de-DE",
+                key: "more_source_text",
+                source: "mehr Quellen\"text",
+                comment: "bar",
+                path: "asdf.yml",
+                context: "asdf.yml"
+            })
+        ])).toBe(true);
+        const actual = yml.serialize();
+        const expected =
+            'more_source_text: mehr Quellen\"text\n' +
+            'source_text: Quellen\"text\n';
+        diff(actual, expected);
+        expect(actual).toBe(expected);
+    });
+
+    test("Yaml add multilevel resource and then serialize", () => {
+        expect.assertions(4);
+
+        var yml = new Yaml({
+            project: "webapp",
+            pathName: "./asdf.yml",
+            locale: "de-DE"
+        });
+        expect(yml).toBeTruthy();
+        [
+            new ResourceString({
+                project: "webapp",
+                sourceLocale: "de-DE",
+                key: "a.b.source_text",
+                source: "Quellen\"text",
+                comment: "foo",
+                path: "asdf.yml",
+                context: "asdf.yml"
+            }),
+            new ResourceString({
+                project: "webapp",
+                sourceLocale: "de-DE",
+                key: "a.c.more_source_text",
+                source: "mehr Quellen\"text",
+                comment: "bar",
+                path: "asdf.yml",
+                context: "asdf.yml"
+            })
+        ].forEach(res => {
+            expect(yml.addResource(res)).toBe(true);
+        });
+        const actual = yml.serialize();
+        const expected =
+            'a:\n' +
+            '  b:\n' +
+            '    source_text: Quellen\"text\n' +
+            '  c:\n' +
+            '    more_source_text: mehr Quellen\"text\n';
+        diff(actual, expected);
+        expect(actual).toBe(expected);
+    });
+
+    test("Yaml serialize something complicated", () => {
+        expect.assertions(4);
+        var yml = new Yaml({
+            project: "webapp",
             pathName: "./zh.yml",
             locale: "zh-Hans-CN"
         });
         expect(yml).toBeTruthy();
         [
-            new ContextResourceString({
+            new ResourceString({
                 project: "webapp",
                 sourceLocale: "zh-Hans-CN",
-                key: "r761853813.• &amp;nbsp; Address a particular topic",
+                key: "• &amp;nbsp; Address a particular topic",
                 source: "• &amp;nbsp; 解决一个特定的主题",
                 comment: " ",
                 path: "zh.yml",
                 context: "zh.yml"
             }),
-            new ContextResourceString({
+            new ResourceString({
                 project: "webapp",
                 sourceLocale: "zh-Hans-CN",
-                key: "r761853813.&apos;&#41;, url&#40;imgs/masks/top_bar",
+                key: "&apos;&#41;, url&#40;imgs/masks/top_bar",
                 source: "&apos;&#41;, url&#40;imgs/masks/top_bar康生活相",
                 comment: "bar",
                 path: "zh.yml",
                 context: "zh.yml"
             })
         ].forEach(function(res) {
-            yml.addResource(res);
+            expect(yml.addResource(res)).toBe(true);
         });
         var expected =
             '"&apos;&#41;, url&#40;imgs/masks/top_bar": "&apos;&#41;, url&#40;imgs/masks/top_bar康生活相"\n' +
             '• &amp;nbsp; Address a particular topic: • &amp;nbsp; 解决一个特定的主题\n';
-        diff(yml.getContent(), expected);
-        expect(yml.getContent()).toBe(expected);
+        diff(yml.serialize(), expected);
+        expect(yml.serialize()).toBe(expected);
     });
-    test("Yaml GetContentWithNewlines", () => {
-        expect.assertions(2);
+
+    test("Yaml serialize with newlines", () => {
+        expect.assertions(4);
         var yml = new Yaml({
-            project: p,
-            type: yft,
+            project: "webapp",
             pathName: "./zh.yml",
             locale: "zh-Hans-CN"
         });
         expect(yml).toBeTruthy();
         [
-            new ContextResourceString({
+            new ResourceString({
                 project: "webapp",
                 sourceLocale: "zh-Hans-CN",
-                key: "r761853813.short key",
+                key: "short key",
                 source: "this is text that is relatively long and can run past the end of the page\nSo, we put a new line in the middle of it.",
                 comment: " ",
                 path: "zh.yml",
                 context: "zh.yml"
             }),
-            new ContextResourceString({
+            new ResourceString({
                 project: "webapp",
                 sourceLocale: "zh-Hans-CN",
-                key: "r761853813.A very long key that happens to have \n new line characters in the middle of it\\. Very very long\\. How long is it? It's so long that it won't even fit in 64 bits\\.",
+                key: "A very long key that happens to have \n new line characters in the middle of it\\. Very very long\\. How long is it? It's so long that it won't even fit in 64 bits\\.",
                 source: "short text",
                 comment: "bar",
                 path: "zh.yml",
                 context: "zh.yml"
             })
         ].forEach(function(res) {
-            yml.addResource(res);
+            expect(yml.addResource(res)).toBe(true);
         });
         var expected =
             "\"A very long key that happens to have \\n new line characters in the middle of it. Very very long. How long is it? It's so long that it won't even fit in 64 bits.\": short text\n" +
             "short key: |-\n" +
             "  this is text that is relatively long and can run past the end of the page\n" +
             "  So, we put a new line in the middle of it.\n";
-        diff(yml.getContent(), expected);
-        expect(yml.getContent()).toBe(expected);
+        diff(yml.serialize(), expected);
+        expect(yml.serialize()).toBe(expected);
     });
-    test("Yaml GetContentWithSubkeys", () => {
-        expect.assertions(2);
+
+    test("Yaml serialize with subkeys", () => {
+        expect.assertions(4);
         var yml = new Yaml({
-            project: p,
-            type: yft,
+            project: "webapp",
             pathName: "./zh.yml",
             locale: "zh-Hans-CN"
         });
         expect(yml).toBeTruthy();
         [
-            new ContextResourceString({
+            new ResourceString({
                 project: "webapp",
                 sourceLocale: "zh-Hans-CN",
-                key: "r761853813.foo.bar.key1",
+                key: "foo.bar.key1",
                 source: "medium length text that doesn't go beyond one line",
                 comment: " ",
                 path: "zh.yml"
             }),
-            new ContextResourceString({
+            new ResourceString({
                 project: "webapp",
                 sourceLocale: "zh-Hans-CN",
-                key: "r761853813.foo.bar.asdf.key2",
+                key: "foo.bar.asdf.key2",
                 source: "short text",
                 comment: "bar",
                 path: "zh.yml"
             })
         ].forEach(function(res) {
-            yml.addResource(res);
+            expect(yml.addResource(res)).toBe(true);
         });
         var expected =
             "foo:\n" +
@@ -966,20 +1080,22 @@ debugger;
             "    asdf:\n" +
             "      key2: short text\n" +
             "    key1: medium length text that doesn't go beyond one line\n";
-        diff(yml.getContent(), expected);
-        expect(yml.getContent()).toBe(expected);
+        diff(yml.serialize(), expected);
+        expect(yml.serialize()).toBe(expected);
     });
-    test("Yaml GetContentEmpty", () => {
+
+    test("Yaml serialize empty", () => {
         expect.assertions(2);
         var yml = new Yaml({
-            project: p,
-            type: yft,
+            project: "webapp",
             pathName: "./asdf.yml",
             locale: "de-DE"
         });
         expect(yml).toBeTruthy();
-        expect(yml.getContent()).toBe('{}\n');
+        expect(yml.serialize()).toBe('{}\n');
     });
+
+    /*
     test("Yaml RealContent", () => {
         expect.assertions(5);
         var yml = new Yaml({
@@ -992,7 +1108,7 @@ debugger;
         yml.extract();
         var set = yml.getTranslationSet();
         expect(set).toBeTruthy();
-        var r = set.get(ContextResourceString.hashKey("webapp", undefined, "en-US", "r343014569.The_perks_of_interning", "x-yaml"));
+        var r = set.get(ResourceString.hashKey("webapp", undefined, "en-US", "r343014569.The_perks_of_interning", "x-yaml"));
         expect(r).toBeTruthy();
         expect(r.getSource()).toBe("The perks of interning");
         expect(r.getKey()).toBe("r343014569.The_perks_of_interning");
@@ -1009,7 +1125,7 @@ debugger;
         yml.extract();
         var set = yml.getTranslationSet();
         expect(set).toBeTruthy();
-        var r = set.get(ContextResourceString.hashKey("webapp", undefined, "en-US", "r485332932.saved_someone_else_time.subject", "x-yaml"));
+        var r = set.get(ResourceString.hashKey("webapp", undefined, "en-US", "r485332932.saved_someone_else_time.subject", "x-yaml"));
         expect(r).toBeTruthy();
         expect(r.getSource()).toBe("Someone said a colleague’s answer to your question saved them a lot of time:");
         expect(r.getKey()).toBe("r485332932.saved_someone_else_time.subject");
@@ -1027,7 +1143,7 @@ debugger;
         yml.extract();
         var set = yml.getTranslationSet();
         expect(set).toBeTruthy();
-        var r = set.get(ContextResourceString.hashKey("webapp", undefined, "en-US", "r485332932.member_question_asked@answered.email_subject", "x-yaml"));
+        var r = set.get(ResourceString.hashKey("webapp", undefined, "en-US", "r485332932.member_question_asked@answered.email_subject", "x-yaml"));
         expect(r).toBeTruthy();
         expect(r.getSource()).toBe("%1, %2 has answered a question you asked!");
         expect(r.getKey()).toBe("r485332932.member_question_asked@answered.email_subject");
@@ -1045,9 +1161,9 @@ debugger;
         yml.extract();
         var set = yml.getTranslationSet();
         expect(set).toBeTruthy();
-        var r = set.get(ContextResourceString.hashKey("webapp", undefined, "en-US", "r485332932.member_question_asked@answered.email_subject", "x-yaml"));
+        var r = set.get(ResourceString.hashKey("webapp", undefined, "en-US", "r485332932.member_question_asked@answered.email_subject", "x-yaml"));
         expect(r).toBeTruthy();
-        expect(r instanceof ContextResourceString).toBeTruthy();
+        expect(r instanceof ResourceString).toBeTruthy();
     });
     test("Yaml ParseIgnoreNonStringValues", () => {
         expect.assertions(16);
@@ -1227,7 +1343,7 @@ debugger;
         expect(r.getSourceLocale()).toBe('en-US');
         expect(r.getKey()).toBe('thanked_note_time_saved.email_subject');
         var translations = new TranslationSet();
-        translations.add(new ContextResourceString({
+        translations.add(new ResourceString({
             project: "webapp",
             key: 'thanked_note_time_saved.email_subject',
             source: '%1, you\'re saving time!',
@@ -1283,7 +1399,7 @@ debugger;
         expect(r.getKey()).toBe('thanked_note_time_saved.push_data');
         var translations = new TranslationSet();
         translations.addAll([
-            new ContextResourceString({
+            new ResourceString({
                 project: "webapp",
                 key: 'thanked_note_time_saved.email_subject',
                 source: '%1, You\'re saving time!',
@@ -1291,7 +1407,7 @@ debugger;
                 targetLocale: "fr-FR",
                 datatype: "x-yaml"
             }),
-            new ContextResourceString({
+            new ResourceString({
                 project: "webapp",
                 key: 'thanked_note_time_saved.subject',
                 source: 'You’ve been thanked for saving a colleague\'s time!',
@@ -1299,7 +1415,7 @@ debugger;
                 targetLocale: "fr-FR",
                 datatype: "x-yaml"
             }),
-            new ContextResourceString({
+            new ResourceString({
                 project: "webapp",
                 key: 'thanked_note_time_saved.push_data',
                 source: 'You’ve saved time! View %1',
@@ -1350,7 +1466,7 @@ debugger;
         expect(r.getSourceLocale()).toBe('en-US');
         expect(r.getKey()).toBe('thanked_note_time_saved.email_subject');
         var translations = new TranslationSet();
-        translations.add(new ContextResourceString({
+        translations.add(new ResourceString({
             project: "webapp",
             key: 'thanked_note_time_saved.email_subject',
             source: '%1, you\'re saving time!',
@@ -1403,40 +1519,6 @@ debugger;
         expect(y).toBeTruthy();
         y.extract();
         expect(y.getLocalizedPath('de-DE')).toBe('de-DE/test2.yml');
-    });
-    test("Yaml GetContentPlural", () => {
-        expect.assertions(2);
-        var yml = new Yaml({
-            project: p,
-            type: yft,
-            pathName: "./asdf.yml",
-            locale: "de-DE"
-        });
-        expect(yml).toBeTruthy();
-        [
-            new ResourcePlural({
-                project: "webapp",
-                sourceLocale: "de-DE",
-                key: "asdf",
-                sourceStrings: {
-                    "one": "This is singular",
-                    "two": "This is double",
-                    "few": "This is a different case"
-                },
-                pathName: "a/b/c.java",
-                comment: "foobar foo",
-                state: "accepted"
-            })
-        ].forEach(function(res) {
-            yml.addResource(res);
-        });
-        var expected =
-            "asdf:\n"+
-            "  few: This is a different case\n" +
-            "  one: This is singular\n" +
-            "  two: This is double\n";
-        diff(yml.getContent(),expected);
-        expect(yml.getContent()).toBe(expected);
     });
     test("Yaml ParseWithFlavor", () => {
         expect.assertions(15);
