@@ -8,7 +8,7 @@ This library exports a class YamlFile which reads or writes
 yaml files. You can then add instances of Resource or get
 an array of Resource instances.
 
-Here is the full [API documentation](./docs/ilib-yaml.md)
+Here is the full [API documentation](./docs/ilibYaml.md)
 
 To read a yaml file and convert it to Resources where the strings
 appear as source strings:
@@ -63,6 +63,9 @@ Please note that all entries in a yaml file are converted into Resource
 instances. In many yaml files, not every entry is a translatable string,
 so this is possibly not what you want. It is up to the caller to filter
 the Resource array afterwards to discard any entries that are not needed.
+This is accomplished by passing in a filter callback function to the
+constructor, or by discarding the unwanted resources after they are
+retrieved from this instance.
 
 ## Filling out the Resource Instances
 

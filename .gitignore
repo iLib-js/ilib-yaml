@@ -131,3 +131,4 @@ dist
 
 # generated code
 lib/
+/docs/
