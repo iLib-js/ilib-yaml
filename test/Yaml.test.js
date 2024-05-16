@@ -633,6 +633,104 @@ describe("yaml parse/deserialize tests", () => {
         expect(r[5].getPath()).toBe("x/y/z/foo_nl-NL.yaml");
     });
 
+    test("Yaml parse with source yaml and calling getResources", () => {
+        expect.assertions(41);
+
+        var src = new Yaml({
+            pathName: "x/y/z/foo_en-US.yaml"
+        });
+        expect(src).toBeTruthy();
+        src.deserialize(
+                '---\n' +
+                "  a:\n" +
+                '    r9834724545: Jobs\n' +
+                '    r9483762220: Our internship program\n' +
+                '    r6782977423: |\n' +
+                '      Completing an internship at MyCompany gives you the opportunity to experience innovation\n' +
+                '      and personal growth at one of the best companies in Silicon Valley, all while learning\n' +
+                '      directly from experienced, successful entrepreneurs.\n' +
+                '  b:\n' +
+                '    r4524523454: Working at MyCompany\n' +
+                '    r3254356823: Jobs\n' +
+                '  foo:\n' +
+                '    bar:\n' +
+                '      asdf:\n' +
+                '        test: test of many levels\n');
+
+        var yml = new Yaml({
+            pathName: "x/y/z/foo_nl-NL.yaml",
+            sourceYaml: src,
+            locale: "nl-NL"
+        });
+        expect(yml).toBeTruthy();
+        yml.deserialize(
+                '---\n' +
+                "  a:\n" +
+                '    r9834724545: Banen\n' +
+                '    r9483762220: Onzere stage programma\n' +
+                '    r6782977423: |\n' +
+                '      Een stage lopen bij MyCompany geeft je de kans om innovatie te ervaren\n' +
+                '      en persoonlijke groei bij een van de beste bedrijven in Silicon Valley, terwijl je leert\n'+
+                '      rechtstreeks van ervaren, succesvolle ondernemers.\n' +
+                '  b:\n' +
+                '    r4524523454: Arbeiden met MyCompany\n' +
+                '    r3254356823: Banen\n' +
+                '  foo:\n' +
+                '    bar:\n' +
+                '      asdf:\n' +
+                '        test: testen van vele niveaus\n');
+        var r = yml.getResources();
+        expect(r).toBeTruthy();
+        expect(r.length).toBe(6);
+        // locale is not special for this type of yml file, so it should appear in the context
+        expect(r[0].getSource()).toBe("Jobs");
+        expect(r[0].getSourceLocale()).toBe("en-US");
+        expect(r[0].getTarget()).toBe("Banen");
+        expect(r[0].getTargetLocale()).toBe("nl-NL");
+        expect(r[0].getKey()).toBe("a.r9834724545");
+        expect(r[0].getPath()).toBe("x/y/z/foo_nl-NL.yaml");
+        expect(r[0].getContext()).toBeFalsy();
+
+        expect(r[1].getSource()).toBe("Our internship program");
+        expect(r[1].getSourceLocale()).toBe("en-US");
+        expect(r[1].getTarget()).toBe("Onzere stage programma");
+        expect(r[1].getTargetLocale()).toBe("nl-NL");
+        expect(r[1].getKey()).toBe("a.r9483762220");
+        expect(r[1].getPath()).toBe("x/y/z/foo_nl-NL.yaml");
+
+        expect(r[2].getSource()).toBe('Completing an internship at MyCompany gives you the opportunity to experience innovation\n' +
+                'and personal growth at one of the best companies in Silicon Valley, all while learning\n' +
+                'directly from experienced, successful entrepreneurs.\n');
+        expect(r[2].getSourceLocale()).toBe("en-US");
+        expect(r[2].getTarget()).toBe('Een stage lopen bij MyCompany geeft je de kans om innovatie te ervaren\n' +
+                'en persoonlijke groei bij een van de beste bedrijven in Silicon Valley, terwijl je leert\n' +
+                'rechtstreeks van ervaren, succesvolle ondernemers.\n');
+        expect(r[2].getTargetLocale()).toBe("nl-NL");
+        expect(r[2].getKey()).toBe("a.r6782977423");
+        expect(r[2].getPath()).toBe("x/y/z/foo_nl-NL.yaml");
+
+        expect(r[3].getSource()).toBe("Working at MyCompany");
+        expect(r[3].getSourceLocale()).toBe("en-US");
+        expect(r[3].getTarget()).toBe("Arbeiden met MyCompany");
+        expect(r[3].getTargetLocale()).toBe("nl-NL");
+        expect(r[3].getKey()).toBe("b.r4524523454");
+        expect(r[3].getPath()).toBe("x/y/z/foo_nl-NL.yaml");
+
+        expect(r[4].getSource()).toBe("Jobs");
+        expect(r[4].getSourceLocale()).toBe("en-US");
+        expect(r[4].getTarget()).toBe("Banen");
+        expect(r[4].getTargetLocale()).toBe("nl-NL");
+        expect(r[4].getKey()).toBe("b.r3254356823");
+        expect(r[4].getPath()).toBe("x/y/z/foo_nl-NL.yaml");
+
+        expect(r[5].getSource()).toBe("test of many levels");
+        expect(r[5].getSourceLocale()).toBe("en-US");
+        expect(r[5].getTarget()).toBe("testen van vele niveaus");
+        expect(r[5].getTargetLocale()).toBe("nl-NL");
+        expect(r[5].getKey()).toBe("foo.bar.asdf.test");
+        expect(r[5].getPath()).toBe("x/y/z/foo_nl-NL.yaml");
+    });
+
     test("Yaml parse with source yaml, copying settings from the source", () => {
         expect.assertions(53);
 

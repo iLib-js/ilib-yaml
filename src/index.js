@@ -352,7 +352,7 @@ class Yaml {
      * @returns {Array<Resource>} an array of resources in this yaml
      */
     getResources() {
-        return this.set.getResources();
+        return this.set.getAll();
     }
 
     /**
