@@ -223,7 +223,6 @@ class Yaml {
                     continue;
                 }
 
-                // this.logger.trace("Adding string resource " + JSON.stringify(resource) + " locale " + this.getLocale());
                 let params = {
                     resType: "string",
                     key: reskey,
@@ -314,15 +313,10 @@ class Yaml {
                         lastKey = parts[parts.length-1];
                     }
                     lastKey = lastKey.replace(/\\./g, '.');
-                    // this.logger.trace("writing translation for " + resource.getKey() + " as " + (resource.getTarget() || resource.getSource()));
                     parent[lastKey] = resource.getTarget() || resource.getSource();
-                //} else {
-                //    this.logger.warn("String resource " + resource.getKey() + " has no source text. Skipping...");
                 }
             }
         }
-
-        // this.logger.trace("json is " + JSON.stringify(json));
 
         // now convert the json back to yaml
         return yamllib.stringify(json, {
@@ -375,7 +369,6 @@ class Yaml {
      */
     addResource(resource) {
         if (typeof(resource) === "object" && resource && resource.getProject() === this.project) {
-            // this.logger.trace("correct project. Adding.");
             this.set.add(resource);
             return true;
         }
