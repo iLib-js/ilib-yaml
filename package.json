@@ -1,6 +1,6 @@
 {
     "name": "ilib-yaml",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "main": "./lib/index.js",
     "module": "./src/index.js",
     "exports": {
@@ -66,10 +66,10 @@
         "prepare": "conditional-install"
     },
     "devDependencies": {
-        "@babel/core": "^7.24.5",
-        "@babel/preset-env": "^7.24.5",
-        "@babel/register": "^7.23.7",
-        "@babel/runtime": "^7.24.5",
+        "@babel/core": "^7.24.7",
+        "@babel/preset-env": "^7.24.7",
+        "@babel/register": "^7.24.6",
+        "@babel/runtime": "^7.24.7",
         "babel-loader": "^9.1.3",
         "babel-plugin-add-module-exports": "^1.0.4",
         "conditional-install": "^1.0.1",
@@ -89,7 +89,7 @@
     },
     "dependencies": {
         "ilib-tools-common": "^1.10.0",
-        "yaml": "^2.0.0"
+        "yaml": "^2.4.5"
     },
     "conditionalDependencies": {
         "process.versions.node < 14.0.0": {
